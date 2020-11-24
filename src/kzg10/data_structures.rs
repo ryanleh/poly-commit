@@ -6,6 +6,7 @@ use ark_std::{
     marker::PhantomData,
     ops::{Add, AddAssign},
 };
+use crypto_primitives::{AdditiveShare, Share};
 
 /// `UniversalParams` are the universal parameters for the KZG10 scheme.
 #[derive(Derivative)]
@@ -138,6 +139,46 @@ pub struct Commitment<E: PairingEngine>(
     /// The commitment is a group element.
     pub E::G1Affine,
 );
+
+// TODO
+impl<E: PairingEngine> Add for Commitment<E> {
+    type Output = Self;
+
+    #[inline]
+    fn add(mut self, other: Self) -> Self {
+        self += &other;
+        self
+    }
+}
+
+impl<'a, E: PairingEngine> AddAssign<&'a Self> for Commitment<E> {
+    #[inline]
+    fn add_assign(&mut self, other: &'a Self) {
+        self.0 = (self.0.into_projective() + &other.0.into_projective()).into_affine();
+    }
+}
+
+impl<E: PairingEngine> Zero for Commitment<E> {
+    #[inline]
+    fn zero() -> Self {
+        Self(E::G1Affine::zero())
+    }
+
+    #[inline]
+    fn is_zero(&self) -> bool {
+        self.0.is_zero()
+    }
+}
+
+impl<E: PairingEngine> Share for Commitment<E> {
+    fn share<R: RngCore>(&self, num: usize, rng: &mut R) -> Vec<Self> {
+        AdditiveShare::new(self.0)
+            .share(num, rng)
+            .into_iter()
+            .map(|a| Self(a.into_inner()))
+            .collect()
+    }
+}
 
 impl<E: PairingEngine> ToBytes for Commitment<E> {
     #[inline]
@@ -281,6 +322,38 @@ impl<'a, F: PrimeField, P: UVPolynomial<F>> AddAssign<(F, &'a Randomness<F, P>)>
     #[inline]
     fn add_assign(&mut self, (f, other): (F, &'a Randomness<F, P>)) {
         self.blinding_polynomial += (f, &other.blinding_polynomial);
+    }
+}
+
+// TODO
+impl<F: PrimeField, P: UVPolynomial<F>> Add for Randomness<F, P> {
+    type Output = Self;
+
+    #[inline]
+    fn add(mut self, other: Self) -> Self {
+        self += &other;
+        self
+    }
+}
+
+impl<F: PrimeField, P: UVPolynomial<F>> Zero for Randomness<F, P> {
+    #[inline]
+    fn zero() -> Self {
+        Self::empty()
+    }
+
+    #[inline]
+    fn is_zero(&self) -> bool {
+        self.blinding_polynomial.is_zero()
+    }
+}
+
+impl<F: PrimeField, P: UVPolynomial<F> + Share> Share for Randomness<F, P> {
+    fn share<R: RngCore>(&self, num: usize, rng: &mut R) -> Vec<Self> {
+        self.blinding_polynomial.share(num, rng)
+            .into_iter()
+            .map(|p| Self { blinding_polynomial: p, _field: PhantomData })
+            .collect()
     }
 }
 

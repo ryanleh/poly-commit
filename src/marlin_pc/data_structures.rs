@@ -3,8 +3,9 @@ use crate::{
     PCVerifierKey, UVPolynomial, Vec,
 };
 use ark_ec::{PairingEngine, ProjectiveCurve};
-use ark_ff::{PrimeField, ToBytes};
+use ark_ff::{PrimeField, ToBytes, Zero};
 use ark_std::ops::{Add, AddAssign};
+use crypto_primitives::Share;
 use rand_core::RngCore;
 
 use crate::kzg10;
@@ -256,6 +257,55 @@ impl<E: PairingEngine> PCCommitment for Commitment<E> {
     }
 }
 
+impl<E: PairingEngine> Add for Commitment<E> {
+    type Output = Self;
+
+    #[inline]
+    fn add(self, other: Self) -> Self {
+        let shifted_comm = match self.shifted_comm {
+            Some(comm) => Some(comm + other.shifted_comm.unwrap()),
+            None => None,
+        };
+        Self {
+            comm: self.comm + other.comm,
+            shifted_comm,
+        }
+    }
+}
+
+impl<E: PairingEngine> Zero for Commitment<E> {
+    #[inline]
+    fn zero() -> Self {
+        Self { 
+            comm: kzg10::Commitment::zero(),
+            shifted_comm: Some(kzg10::Commitment::zero())
+        }
+    }
+
+    #[inline]
+    fn is_zero(&self) -> bool {
+        unimplemented!()
+    }
+}
+
+impl<E: PairingEngine> Share for Commitment<E> {
+    fn share<R: RngCore>(&self, num: usize, rng: &mut R) -> Vec<Self> {
+        let comm_shares = self.comm.share(num, rng);
+        if let Some(shifted) = self.shifted_comm {
+            comm_shares
+                .into_iter()
+                .zip(shifted.share(num, rng))
+                .map(|(c, s)| Self { comm: c, shifted_comm: Some(s) })
+                .collect()
+        } else {
+            comm_shares
+                .into_iter()
+                .map(|comm| Self { comm, shifted_comm: None })
+                .collect()
+        }
+    }
+}
+
 /// Prepared commitment to a polynomial that optionally enforces a degree bound.
 #[derive(Derivative)]
 #[derivative(
@@ -373,6 +423,48 @@ impl<F: PrimeField, P: UVPolynomial<F>> PCRandomness for Randomness<F, P> {
         Self {
             rand: kzg10::Randomness::rand(hiding_bound, false, None, rng),
             shifted_rand,
+        }
+    }
+}
+
+impl<F: PrimeField, P: UVPolynomial<F>> Add for Randomness<F, P> {
+    type Output = Self;
+
+    #[inline]
+    fn add(self, other: Self) -> Self {
+        self + &other
+    }
+}
+
+impl<F: PrimeField, P: UVPolynomial<F>> Zero for Randomness<F, P> {
+    #[inline]
+    fn zero() -> Self {
+        Self { 
+            rand: kzg10::Randomness::zero(),
+            shifted_rand: Some(kzg10::Randomness::zero())
+        }
+    }
+
+    #[inline]
+    fn is_zero(&self) -> bool {
+        unimplemented!()
+    }
+}
+
+impl<F: PrimeField, P: UVPolynomial<F> + Share> Share for Randomness<F, P> {
+    fn share<R: RngCore>(&self, num: usize, rng: &mut R) -> Vec<Self> {
+        let rand_shares = self.rand.share(num, rng);
+        if let Some(shifted_rand) = &self.shifted_rand {
+            rand_shares
+                .into_iter()
+                .zip(shifted_rand.share(num, rng))
+                .map(|(r, s)| Self { rand: r, shifted_rand: Some(s)})
+                .collect()
+        } else {
+            rand_shares
+                .into_iter()
+                .map(|r| Self { rand: r, shifted_rand: None })
+                .collect()
         }
     }
 }
