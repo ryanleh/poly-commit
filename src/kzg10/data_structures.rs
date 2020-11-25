@@ -1,6 +1,7 @@
 use crate::*;
 use ark_ec::{AffineCurve, PairingEngine, ProjectiveCurve};
 use ark_ff::{PrimeField, ToBytes, Zero};
+use ark_serialize::*;
 use ark_std::{
     borrow::Cow,
     marker::PhantomData,
@@ -81,7 +82,7 @@ pub struct VerifierKey<E: PairingEngine> {
 
 impl<E: PairingEngine> ToBytes for VerifierKey<E> {
     #[inline]
-    fn write<W: ark_std::io::Write>(&self, mut writer: W) -> ark_std::io::Result<()> {
+    fn write<W: Write>(&self, mut writer: W) -> ark_std::io::Result<()> {
         self.g.write(&mut writer)?;
         self.gamma_g.write(&mut writer)?;
         self.h.write(&mut writer)?;
@@ -125,7 +126,7 @@ impl<E: PairingEngine> PreparedVerifierKey<E> {
 }
 
 /// `Commitment` commits to a polynomial. It is output by `KZG10::commit`.
-#[derive(Derivative)]
+#[derive(Derivative, CanonicalSerialize, CanonicalDeserialize)]
 #[derivative(
     Default(bound = ""),
     Hash(bound = ""),
@@ -182,7 +183,7 @@ impl<E: PairingEngine> Share for Commitment<E> {
 
 impl<E: PairingEngine> ToBytes for Commitment<E> {
     #[inline]
-    fn write<W: ark_std::io::Write>(&self, writer: W) -> ark_std::io::Result<()> {
+    fn write<W: Write>(&self, writer: W) -> ark_std::io::Result<()> {
         self.0.write(writer)
     }
 }
@@ -357,8 +358,58 @@ impl<F: PrimeField, P: UVPolynomial<F> + Share> Share for Randomness<F, P> {
     }
 }
 
+impl<F: PrimeField, P: UVPolynomial<F> + CanonicalSerialize> CanonicalSerialize for Randomness<F, P> {
+    #[inline]
+    fn serialize<W: Write>(&self, writer: W) -> Result<(), SerializationError> {
+        self.blinding_polynomial.serialize(writer)?;
+        Ok(())
+    }
+
+    #[inline]
+    fn serialized_size(&self) -> usize {
+        self.blinding_polynomial.serialized_size()
+    }
+
+    #[inline]
+    fn serialize_uncompressed<W: Write>(&self, writer: W) -> Result<(), SerializationError> {
+        self.blinding_polynomial.serialize_uncompressed(writer)?;
+        Ok(())
+    }
+
+    #[inline]
+    fn serialize_unchecked<W: Write>(&self, writer: W) -> Result<(), SerializationError> {
+        self.blinding_polynomial.serialize_unchecked(writer)?;
+        Ok(())
+    }
+
+    #[inline]
+    fn uncompressed_size(&self) -> usize {
+        self.blinding_polynomial.uncompressed_size()
+    }
+}
+
+impl<F: PrimeField, P: UVPolynomial<F> + CanonicalDeserialize> CanonicalDeserialize for Randomness<F, P> {
+    #[inline]
+    fn deserialize<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
+        let blinding_polynomial = P::deserialize(&mut reader)?;
+        Ok(Self { blinding_polynomial, _field: PhantomData })
+    }
+
+    #[inline]
+    fn deserialize_uncompressed<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
+        let blinding_polynomial = P::deserialize_uncompressed(&mut reader)?;
+        Ok(Self { blinding_polynomial, _field: PhantomData })
+    }
+
+    #[inline]
+    fn deserialize_unchecked<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
+        let blinding_polynomial = P::deserialize_unchecked(&mut reader)?;
+        Ok(Self { blinding_polynomial, _field: PhantomData })
+    }
+}
+
 /// `Proof` is an evaluation proof that is output by `KZG10::open`.
-#[derive(Derivative)]
+#[derive(Derivative, CanonicalSerialize, CanonicalDeserialize)]
 #[derivative(
     Default(bound = ""),
     Hash(bound = ""),
@@ -389,11 +440,60 @@ impl<E: PairingEngine> PCProof for Proof<E> {
 
 impl<E: PairingEngine> ToBytes for Proof<E> {
     #[inline]
-    fn write<W: ark_std::io::Write>(&self, mut writer: W) -> ark_std::io::Result<()> {
+    fn write<W: Write>(&self, mut writer: W) -> ark_std::io::Result<()> {
         self.w.write(&mut writer)?;
         self.random_v
             .as_ref()
             .unwrap_or(&E::Fr::zero())
             .write(&mut writer)
+    }
+}
+
+impl<E: PairingEngine> Add for Proof<E> {
+    type Output = Self;
+
+    #[inline]
+    fn add(mut self, other: Self) -> Self {
+        self.w = (self.w.into_projective() + &other.w.into_projective()).into_affine();
+        self.random_v = match self.random_v {
+            Some(v) => Some(v + &other.random_v.unwrap()),
+            None => other.random_v,
+        };
+        self
+    }
+}
+
+impl<E: PairingEngine> Zero for Proof<E> {
+    #[inline]
+    fn zero() -> Self {
+        Self { w: E::G1Affine::zero(), random_v: None }
+    }
+
+    #[inline]
+    fn is_zero(&self) -> bool {
+        unimplemented!()
+    }
+}
+
+impl<E: PairingEngine> Share for Proof<E> {
+    fn share<R: RngCore>(&self, num: usize, rng: &mut R) -> Vec<Self> {
+        let w_shares = AdditiveShare::new(self.w)
+            .share(num, rng)
+            .into_iter()
+            .map(AdditiveShare::into_inner)
+            .collect::<Vec<_>>();
+
+        if let Some(random_v) = &self.random_v {
+            w_shares
+                .into_iter()
+                .zip(random_v.share(num, rng))
+                .map(|(w, v)| Self { w, random_v: Some(v)})
+                .collect()
+        } else {
+            w_shares
+                .into_iter()
+                .map(|w| Self { w, random_v: None })
+                .collect()
+        }
     }
 }

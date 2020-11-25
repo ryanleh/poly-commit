@@ -1,5 +1,6 @@
 use crate::{Polynomial, Rc, String, Vec};
 use ark_ff::{Field, Zero};
+use ark_serialize::*;
 use ark_std::{
     borrow::Borrow,
     marker::PhantomData,
@@ -198,6 +199,74 @@ impl<F: Field, P: Polynomial<F> + Share> Share for LabeledPolynomial<F, P> {
     }
 }
 
+// TODO: Remove all of this
+impl<F: Field, P: Polynomial<F> + CanonicalSerialize> CanonicalSerialize for LabeledPolynomial<F, P> {
+    #[inline]
+    fn serialize<W: Write>(&self, mut writer: W) -> Result<(), SerializationError> {
+        bincode::serialize_into(&mut writer, &self.label).unwrap();
+        self.polynomial.as_ref().serialize(&mut writer)?;
+        self.degree_bound.serialize(&mut writer)?;
+        self.hiding_bound.serialize(&mut writer)?;
+        Ok(())
+    }
+
+    #[inline]
+    fn serialized_size(&self) -> usize {
+        bincode::serialized_size(&self.label).unwrap() as usize + self.polynomial.as_ref().serialized_size() + self.degree_bound.serialized_size() + self.hiding_bound.serialized_size()
+    }
+
+    #[inline]
+    fn serialize_uncompressed<W: Write>(&self, mut writer: W) -> Result<(), SerializationError> {
+        bincode::serialize_into(&mut writer, &self.label).unwrap();
+        self.polynomial.as_ref().serialize_uncompressed(&mut writer)?;
+        self.degree_bound.serialize_uncompressed(&mut writer)?;
+        self.hiding_bound.serialize_uncompressed(&mut writer)?;
+        Ok(())
+    }
+
+    #[inline]
+    fn serialize_unchecked<W: Write>(&self, mut writer: W) -> Result<(), SerializationError> {
+        bincode::serialize_into(&mut writer, &self.label).unwrap();
+        self.polynomial.as_ref().serialize_unchecked(&mut writer)?;
+        self.degree_bound.serialize_unchecked(&mut writer)?;
+        self.hiding_bound.serialize_unchecked(&mut writer)?;
+        Ok(())
+    }
+
+    #[inline]
+    fn uncompressed_size(&self) -> usize {
+        bincode::serialized_size(&self.label).unwrap() as usize + self.polynomial.as_ref().uncompressed_size() + self.degree_bound.uncompressed_size() + self.hiding_bound.uncompressed_size()
+    }
+}
+
+impl<F: Field, P: Polynomial<F> + CanonicalDeserialize> CanonicalDeserialize for LabeledPolynomial<F, P> {
+    #[inline]
+    fn deserialize<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
+        let label: String = bincode::deserialize_from(&mut reader).unwrap();
+        let polynomial = P::deserialize(&mut reader)?;
+        let degree_bound = Option::<usize>::deserialize(&mut reader)?;
+        let hiding_bound = Option::<usize>::deserialize(&mut reader)?;
+        Ok(Self::new(label, polynomial, degree_bound, hiding_bound))
+    }
+
+    #[inline]
+    fn deserialize_uncompressed<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
+        let label: String = bincode::deserialize_from(&mut reader).unwrap();
+        let polynomial = P::deserialize_uncompressed(&mut reader)?;
+        let degree_bound = Option::<usize>::deserialize_uncompressed(&mut reader)?;
+        let hiding_bound = Option::<usize>::deserialize_uncompressed(&mut reader)?;
+        Ok(Self::new(label, polynomial, degree_bound, hiding_bound))
+    }
+
+    #[inline]
+    fn deserialize_unchecked<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
+        let label: String = bincode::deserialize_from(&mut reader).unwrap();
+        let polynomial = P::deserialize_unchecked(&mut reader)?;
+        let degree_bound = Option::<usize>::deserialize_unchecked(&mut reader)?;
+        let hiding_bound = Option::<usize>::deserialize_unchecked(&mut reader)?;
+        Ok(Self::new(label, polynomial, degree_bound, hiding_bound))
+    }
+}
 
 /// A commitment along with information about its degree bound (if any).
 #[derive(Clone)]
@@ -235,7 +304,7 @@ impl<C: PCCommitment> LabeledCommitment<C> {
 
 impl<C: PCCommitment> ark_ff::ToBytes for LabeledCommitment<C> {
     #[inline]
-    fn write<W: ark_std::io::Write>(&self, writer: W) -> ark_std::io::Result<()> {
+    fn write<W: Write>(&self, writer: W) -> ark_std::io::Result<()> {
         self.commitment.write(writer)
     }
 }
@@ -269,6 +338,68 @@ impl<C: PCCommitment + Share> Share for LabeledCommitment<C> {
             .into_iter()
             .map(|c| Self::new(self.label.clone(), c, self.degree_bound))
             .collect()
+    }
+}
+
+impl<C: PCCommitment + CanonicalSerialize> CanonicalSerialize for LabeledCommitment<C> {
+    #[inline]
+    fn serialize<W: Write>(&self, mut writer: W) -> Result<(), SerializationError> {
+        bincode::serialize_into(&mut writer, &self.label).unwrap();
+        self.commitment.serialize(&mut writer)?;
+        self.degree_bound.serialize(&mut writer)?;
+        Ok(())
+    }
+
+    #[inline]
+    fn serialized_size(&self) -> usize {
+        bincode::serialized_size(&self.label).unwrap() as usize + self.commitment.serialized_size() + self.degree_bound.serialized_size()
+    }
+
+    #[inline]
+    fn serialize_uncompressed<W: Write>(&self, mut writer: W) -> Result<(), SerializationError> {
+        bincode::serialize_into(&mut writer, &self.label).unwrap();
+        self.commitment.serialize_uncompressed(&mut writer)?;
+        self.degree_bound.serialize_uncompressed(&mut writer)?;
+        Ok(())
+    }
+
+    #[inline]
+    fn serialize_unchecked<W: Write>(&self, mut writer: W) -> Result<(), SerializationError> {
+        bincode::serialize_into(&mut writer, &self.label).unwrap();
+        self.commitment.serialize_unchecked(&mut writer)?;
+        self.degree_bound.serialize_unchecked(&mut writer)?;
+        Ok(())
+    }
+
+    #[inline]
+    fn uncompressed_size(&self) -> usize {
+        bincode::serialized_size(&self.label).unwrap() as usize + self.commitment.uncompressed_size() + self.degree_bound.uncompressed_size()
+    }
+}
+
+impl<C: PCCommitment + CanonicalDeserialize> CanonicalDeserialize for LabeledCommitment<C> {
+    #[inline]
+    fn deserialize<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
+        let label: String = bincode::deserialize_from(&mut reader).unwrap();
+        let commitment = C::deserialize(&mut reader)?;
+        let degree_bound = Option::<usize>::deserialize(&mut reader)?;
+        Ok(Self::new(label, commitment, degree_bound))
+    }
+
+    #[inline]
+    fn deserialize_uncompressed<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
+        let label: String = bincode::deserialize_from(&mut reader).unwrap();
+        let commitment = C::deserialize_uncompressed(&mut reader)?;
+        let degree_bound = Option::<usize>::deserialize_uncompressed(&mut reader)?;
+        Ok(Self::new(label, commitment, degree_bound))
+    }
+
+    #[inline]
+    fn deserialize_unchecked<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
+        let label: String = bincode::deserialize_from(&mut reader).unwrap();
+        let commitment = C::deserialize_unchecked(&mut reader)?;
+        let degree_bound = Option::<usize>::deserialize_unchecked(&mut reader)?;
+        Ok(Self::new(label, commitment, degree_bound))
     }
 }
 
