@@ -46,7 +46,7 @@ impl<E: PairingEngine> CanonicalSerialize for CommitterKey<E> {
     #[inline]
     fn serialize<W: Write>(&self, mut writer: W) -> Result<(), SerializationError> {
         self.powers.serialize_uncompressed(&mut writer)?;
-        self.shifted_powers.serialize_uncompressed(&mut writer)?;
+        self.shifted_powers.serialize(&mut writer).unwrap();
         self.powers_of_gamma_g.serialize_uncompressed(&mut writer)?;
         self.enforced_degree_bounds.serialize(&mut writer)?;
         self.max_degree.serialize(&mut writer)?;
@@ -86,7 +86,7 @@ impl<E: PairingEngine> CanonicalDeserialize for CommitterKey<E> {
     #[inline]
     fn deserialize<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
         let powers = Vec::<E::G1Affine>::deserialize_unchecked(&mut reader)?;
-        let shifted_powers = Option::<Vec<E::G1Affine>>::deserialize_unchecked(&mut reader)?;
+        let shifted_powers = Option::<Vec<E::G1Affine>>::deserialize(&mut reader)?;
         let powers_of_gamma_g = Vec::<E::G1Affine>::deserialize_unchecked(&mut reader)?;
         let enforced_degree_bounds = Option::<Vec<usize>>::deserialize(&mut reader)?;
         let max_degree = usize::deserialize(&mut reader)?;
