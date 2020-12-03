@@ -100,7 +100,8 @@ pub trait PCProof: Clone + ark_ff::ToBytes {
 #[derive(Debug, Clone)]
 pub struct LabeledPolynomial<F: Field, P: Polynomial<F>> {
     label: PolynomialLabel,
-    polynomial: Rc<P>,
+    /// TODO: Remove
+    pub polynomial: Rc<P>,
     degree_bound: Option<usize>,
     hiding_bound: Option<usize>,
     _field: PhantomData<F>,
@@ -174,6 +175,13 @@ impl<F: Field, P: Polynomial<F>> Add for LabeledPolynomial<F, P> {
     fn add(self, mut other: Self) -> Self {
         *Rc::get_mut(&mut other.polynomial).unwrap() += self.polynomial.as_ref();
         other
+    }
+}
+
+impl<'a, F: Field, P: Polynomial<F>> AddAssign<&'a Self> for LabeledPolynomial<F, P> {
+    #[inline]
+    fn add_assign(&mut self, other: &'a Self) {
+        *Rc::get_mut(&mut self.polynomial).unwrap() += other.polynomial.as_ref();
     }
 }
 
