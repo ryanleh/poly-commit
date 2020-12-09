@@ -3,8 +3,10 @@ use crate::{
     PCVerifierKey, UVPolynomial, Vec,
 };
 use ark_ec::{PairingEngine, ProjectiveCurve};
-use ark_ff::{PrimeField, ToBytes};
+use ark_ff::{PrimeField, ToBytes, Zero};
+use ark_serialize::*;
 use ark_std::ops::{Add, AddAssign};
+use crypto_primitives::Share;
 use rand_core::RngCore;
 
 use crate::kzg10;
@@ -39,6 +41,80 @@ pub struct CommitterKey<E: PairingEngine> {
     /// from.
     pub max_degree: usize,
 }
+
+impl<E: PairingEngine> CanonicalSerialize for CommitterKey<E> {
+    #[inline]
+    fn serialize<W: Write>(&self, mut writer: W) -> Result<(), SerializationError> {
+        self.powers.serialize_uncompressed(&mut writer)?;
+        self.shifted_powers.serialize(&mut writer).unwrap();
+        self.powers_of_gamma_g.serialize_uncompressed(&mut writer)?;
+        self.enforced_degree_bounds.serialize(&mut writer)?;
+        self.max_degree.serialize(&mut writer)?;
+        Ok(())
+    }
+
+    #[inline]
+    fn serialized_size(&self) -> usize {
+        self.powers.uncompressed_size() +
+        self.shifted_powers.uncompressed_size() +
+        self.powers_of_gamma_g.uncompressed_size() +
+        self.enforced_degree_bounds.serialized_size() +
+        self.max_degree.serialized_size()
+    }
+
+    #[inline]
+    fn serialize_uncompressed<W: Write>(&self, mut writer: W) -> Result<(), SerializationError> {
+        self.powers.serialize_uncompressed(&mut writer)?;
+        self.shifted_powers.serialize_uncompressed(&mut writer)?;
+        self.powers_of_gamma_g.serialize_uncompressed(&mut writer)?;
+        self.enforced_degree_bounds.serialize_uncompressed(&mut writer)?;
+        self.max_degree.serialize_uncompressed(&mut writer)?;
+        Ok(())
+    }
+
+    #[inline]
+    fn uncompressed_size(&self) -> usize {
+        self.powers.uncompressed_size() +
+        self.shifted_powers.uncompressed_size() +
+        self.powers_of_gamma_g.uncompressed_size() +
+        self.enforced_degree_bounds.uncompressed_size() +
+        self.max_degree.uncompressed_size()
+    }
+}
+
+impl<E: PairingEngine> CanonicalDeserialize for CommitterKey<E> {
+    #[inline]
+    fn deserialize<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
+        let powers = Vec::<E::G1Affine>::deserialize_unchecked(&mut reader)?;
+        let shifted_powers = Option::<Vec<E::G1Affine>>::deserialize(&mut reader)?;
+        let powers_of_gamma_g = Vec::<E::G1Affine>::deserialize_unchecked(&mut reader)?;
+        let enforced_degree_bounds = Option::<Vec<usize>>::deserialize(&mut reader)?;
+        let max_degree = usize::deserialize(&mut reader)?;
+        Ok(Self { powers, shifted_powers, powers_of_gamma_g, enforced_degree_bounds, max_degree })
+    }
+
+    #[inline]
+    fn deserialize_uncompressed<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
+        let powers = Vec::<E::G1Affine>::deserialize_uncompressed(&mut reader)?;
+        let shifted_powers = Option::<Vec<E::G1Affine>>::deserialize_uncompressed(&mut reader)?;
+        let powers_of_gamma_g = Vec::<E::G1Affine>::deserialize_uncompressed(&mut reader)?;
+        let enforced_degree_bounds = Option::<Vec<usize>>::deserialize_uncompressed(&mut reader)?;
+        let max_degree = usize::deserialize_uncompressed(&mut reader)?;
+        Ok(Self { powers, shifted_powers, powers_of_gamma_g, enforced_degree_bounds, max_degree })
+    }
+
+    #[inline]
+    fn deserialize_unchecked<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
+        let powers = Vec::<E::G1Affine>::deserialize_unchecked(&mut reader)?;
+        let shifted_powers = Option::<Vec<E::G1Affine>>::deserialize_unchecked(&mut reader)?;
+        let powers_of_gamma_g = Vec::<E::G1Affine>::deserialize_unchecked(&mut reader)?;
+        let enforced_degree_bounds = Option::<Vec<usize>>::deserialize_unchecked(&mut reader)?;
+        let max_degree = usize::deserialize_unchecked(&mut reader)?;
+        Ok(Self { powers, shifted_powers, powers_of_gamma_g, enforced_degree_bounds, max_degree })
+    }
+}
+
+
 
 impl<E: PairingEngine> CommitterKey<E> {
     /// Obtain powers for the underlying KZG10 construction
@@ -132,7 +208,7 @@ impl<E: PairingEngine> PCVerifierKey for VerifierKey<E> {
 
 impl<E: PairingEngine> ToBytes for VerifierKey<E> {
     #[inline]
-    fn write<W: ark_std::io::Write>(&self, mut writer: W) -> ark_std::io::Result<()> {
+    fn write<W: Write>(&self, mut writer: W) -> ark_std::io::Result<()> {
         self.vk.write(&mut writer)?;
         if let Some(degree_bounds_and_shift_powers) = &self.degree_bounds_and_shift_powers {
             writer.write_all(&degree_bounds_and_shift_powers.len().to_le_bytes())?;
@@ -205,7 +281,7 @@ impl<E: PairingEngine> PCPreparedVerifierKey<VerifierKey<E>> for PreparedVerifie
 }
 
 /// Commitment to a polynomial that optionally enforces a degree bound.
-#[derive(Derivative)]
+#[derive(Derivative, CanonicalSerialize, CanonicalDeserialize)]
 #[derivative(
     Default(bound = ""),
     Hash(bound = ""),
@@ -227,7 +303,7 @@ pub struct Commitment<E: PairingEngine> {
 
 impl<E: PairingEngine> ToBytes for Commitment<E> {
     #[inline]
-    fn write<W: ark_std::io::Write>(&self, mut writer: W) -> ark_std::io::Result<()> {
+    fn write<W: Write>(&self, mut writer: W) -> ark_std::io::Result<()> {
         self.comm.write(&mut writer)?;
         let shifted_exists = self.shifted_comm.is_some();
         shifted_exists.write(&mut writer)?;
@@ -253,6 +329,55 @@ impl<E: PairingEngine> PCCommitment for Commitment<E> {
 
     fn size_in_bytes(&self) -> usize {
         self.comm.size_in_bytes() + self.shifted_comm.as_ref().map_or(0, |c| c.size_in_bytes())
+    }
+}
+
+impl<E: PairingEngine> Add for Commitment<E> {
+    type Output = Self;
+
+    #[inline]
+    fn add(self, other: Self) -> Self {
+        let shifted_comm = match self.shifted_comm {
+            Some(comm) => Some(comm + other.shifted_comm.unwrap()),
+            None => other.shifted_comm,
+        };
+        Self {
+            comm: self.comm + other.comm,
+            shifted_comm,
+        }
+    }
+}
+
+impl<E: PairingEngine> Zero for Commitment<E> {
+    #[inline]
+    fn zero() -> Self {
+        Self { 
+            comm: kzg10::Commitment::zero(),
+            shifted_comm: None,
+        }
+    }
+
+    #[inline]
+    fn is_zero(&self) -> bool {
+        unimplemented!()
+    }
+}
+
+impl<E: PairingEngine> Share for Commitment<E> {
+    fn share<R: RngCore>(&self, num: usize, rng: &mut R) -> Vec<Self> {
+        let comm_shares = self.comm.share(num, rng);
+        if let Some(shifted) = self.shifted_comm {
+            comm_shares
+                .into_iter()
+                .zip(shifted.share(num, rng))
+                .map(|(c, s)| Self { comm: c, shifted_comm: Some(s) })
+                .collect()
+        } else {
+            comm_shares
+                .into_iter()
+                .map(|comm| Self { comm, shifted_comm: None })
+                .collect()
+        }
     }
 }
 
@@ -374,5 +499,103 @@ impl<F: PrimeField, P: UVPolynomial<F>> PCRandomness for Randomness<F, P> {
             rand: kzg10::Randomness::rand(hiding_bound, false, None, rng),
             shifted_rand,
         }
+    }
+}
+
+impl<F: PrimeField, P: UVPolynomial<F>> Add for Randomness<F, P> {
+    type Output = Self;
+
+    #[inline]
+    fn add(self, other: Self) -> Self {
+        self + &other
+    }
+}
+
+impl<F: PrimeField, P: UVPolynomial<F>> Zero for Randomness<F, P> {
+    #[inline]
+    fn zero() -> Self {
+        Self { 
+            rand: kzg10::Randomness::zero(),
+            shifted_rand: None,
+        }
+    }
+
+    #[inline]
+    fn is_zero(&self) -> bool {
+        unimplemented!()
+    }
+}
+
+impl<F: PrimeField, P: UVPolynomial<F> + Share> Share for Randomness<F, P> {
+    fn share<R: RngCore>(&self, num: usize, rng: &mut R) -> Vec<Self> {
+        let rand_shares = self.rand.share(num, rng);
+        if let Some(shifted_rand) = &self.shifted_rand {
+            rand_shares
+                .into_iter()
+                .zip(shifted_rand.share(num, rng))
+                .map(|(r, s)| Self { rand: r, shifted_rand: Some(s)})
+                .collect()
+        } else {
+            rand_shares
+                .into_iter()
+                .map(|r| Self { rand: r, shifted_rand: None })
+                .collect()
+        }
+    }
+}
+
+impl<F: PrimeField, P: UVPolynomial<F> + CanonicalSerialize> CanonicalSerialize for Randomness<F, P> {
+    #[inline]
+    fn serialize<W: Write>(&self, mut writer: W) -> Result<(), SerializationError> {
+        self.rand.serialize(&mut writer)?;
+        self.shifted_rand.serialize(&mut writer)?;
+        Ok(())
+    }
+
+    #[inline]
+    fn serialized_size(&self) -> usize {
+        self.rand.serialized_size() + self.shifted_rand.serialized_size()
+    }
+
+    #[inline]
+    fn serialize_uncompressed<W: Write>(&self, mut writer: W) -> Result<(), SerializationError> {
+        self.rand.serialize_uncompressed(&mut writer)?;
+        self.shifted_rand.serialize_uncompressed(&mut writer)?;
+        Ok(())
+    }
+
+    #[inline]
+    fn serialize_unchecked<W: Write>(&self, mut writer: W) -> Result<(), SerializationError> {
+        self.rand.serialize_unchecked(&mut writer)?;
+        self.shifted_rand.serialize_unchecked(&mut writer)?;
+        Ok(())
+    }
+
+    #[inline]
+    fn uncompressed_size(&self) -> usize {
+        self.rand.uncompressed_size() + self.shifted_rand.uncompressed_size()
+    }
+}
+
+impl<F: PrimeField, P: UVPolynomial<F> + CanonicalDeserialize> CanonicalDeserialize for Randomness<F, P> {
+    #[inline]
+    fn deserialize<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
+        let rand = kzg10::Randomness::<F, P>::deserialize(&mut reader)?;
+        let shifted_rand = Option::<kzg10::Randomness::<F, P>>::deserialize(&mut reader)?;
+        Ok(Self { rand, shifted_rand })
+    }
+
+    #[inline]
+    fn deserialize_uncompressed<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
+        let rand = kzg10::Randomness::<F, P>::deserialize_uncompressed(&mut reader)?;
+        let shifted_rand = Option::<kzg10::Randomness::<F, P>>::deserialize_uncompressed(&mut reader)?;
+        Ok(Self { rand, shifted_rand })
+    }
+
+    #[inline]
+    fn deserialize_unchecked<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
+        let rand = kzg10::Randomness::<F, P>::deserialize_unchecked(&mut reader)?;
+        let shifted_rand = Option::<kzg10::Randomness::<F, P>>::deserialize_unchecked(&mut reader)?;
+        Ok(Self { rand, shifted_rand })
     }
 }

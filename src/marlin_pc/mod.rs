@@ -293,57 +293,111 @@ where
         let rng = &mut crate::optional_rng::OptionalRng(rng);
         let commit_time = start_timer!(|| "Committing to polynomials");
 
-        let mut commitments = Vec::new();
-        let mut randomness = Vec::new();
+        let poly_ref: Vec<(&String, Option<usize>, Option<usize>, &P)> = polynomials
+            .into_iter()
+            .map(|p| (p.label(), p.degree_bound(), p.hiding_bound(), p.polynomial()))
+            .collect();
 
-        for p in polynomials {
-            let label = p.label();
-            let degree_bound = p.degree_bound();
-            let hiding_bound = p.hiding_bound();
-            let polynomial: &P = p.polynomial();
+        // TODO: For each polynomial spawn
+        use rayon::prelude::*;
+        let comm_rand = poly_ref.into_par_iter()
+            .map(|(label, degree_bound, hiding_bound, polynomial)| {
+                let rng = &mut ark_ff::test_rng(); // TODO
 
-            let enforced_degree_bounds: Option<&[usize]> = ck
-                .enforced_degree_bounds
-                .as_ref()
-                .map(|bounds| bounds.as_slice());
-            kzg10::KZG10::<E, P>::check_degrees_and_bounds(
-                ck.supported_degree(),
-                ck.max_degree,
-                enforced_degree_bounds,
-                &p,
-            )?;
+                let enforced_degree_bounds: Option<&[usize]> = ck
+                    .enforced_degree_bounds
+                    .as_ref()
+                    .map(|bounds| bounds.as_slice());
+//                kzg10::KZG10::<E, P>::check_degrees_and_bounds(
+//                    ck.supported_degree(),
+//                    ck.max_degree,
+//                    enforced_degree_bounds,
+//                    &p,
+//                )?;
 
-            let commit_time = start_timer!(|| format!(
-                "Polynomial {} of degree {}, degree bound {:?}, and hiding bound {:?}",
-                label,
-                polynomial.degree(),
-                degree_bound,
-                hiding_bound,
-            ));
+                let commit_time = start_timer!(|| format!(
+                    "Polynomial {} of degree {}, degree bound {:?}, and hiding bound {:?}",
+                    label,
+                    polynomial.degree(),
+                    degree_bound,
+                    hiding_bound,
+                ));
 
-            let (comm, rand) =
-                kzg10::KZG10::commit(&ck.powers(), polynomial, hiding_bound, Some(rng))?;
-            let (shifted_comm, shifted_rand) = if let Some(degree_bound) = degree_bound {
-                let shifted_powers = ck
-                    .shifted_powers(degree_bound)
-                    .ok_or(Error::UnsupportedDegreeBound(degree_bound))?;
-                let (shifted_comm, shifted_rand) =
-                    kzg10::KZG10::commit(&shifted_powers, &polynomial, hiding_bound, Some(rng))?;
-                (Some(shifted_comm), Some(shifted_rand))
-            } else {
-                (None, None)
-            };
+                let (comm, rand) =
+                    kzg10::KZG10::commit(&ck.powers(), polynomial, hiding_bound, Some(rng))?;
+                let (shifted_comm, shifted_rand) = if let Some(degree_bound) = degree_bound {
+                    let shifted_powers = ck
+                        .shifted_powers(degree_bound)
+                        .ok_or(Error::UnsupportedDegreeBound(degree_bound))?;
+                    let (shifted_comm, shifted_rand) =
+                        kzg10::KZG10::commit(&shifted_powers, &polynomial, hiding_bound, Some(rng))?;
+                    (Some(shifted_comm), Some(shifted_rand))
+                } else {
+                    (None, None)
+                };
 
-            let comm = Commitment { comm, shifted_comm };
-            let rand = Randomness { rand, shifted_rand };
-            commitments.push(LabeledCommitment::new(
-                label.to_string(),
-                comm,
-                degree_bound,
-            ));
-            randomness.push(rand);
-            end_timer!(commit_time);
-        }
+                let comm = Commitment { comm, shifted_comm };
+                let rand = Randomness { rand, shifted_rand };
+
+                let labeled_commitment = LabeledCommitment::new(
+                    label.to_string(),
+                    comm,
+                    degree_bound,
+                );
+                end_timer!(commit_time);
+                Ok((labeled_commitment, rand))
+            }).collect::<Result<Vec<_>, _>>()?;
+
+        let (commitments, randomness) = comm_rand.into_iter().unzip();
+
+//        for p in polynomials {
+//            let label = p.label();
+//            let degree_bound = p.degree_bound();
+//            let hiding_bound = p.hiding_bound();
+//            let polynomial: &P = p.polynomial();
+//
+//            let enforced_degree_bounds: Option<&[usize]> = ck
+//                .enforced_degree_bounds
+//                .as_ref()
+//                .map(|bounds| bounds.as_slice());
+//            kzg10::KZG10::<E, P>::check_degrees_and_bounds(
+//                ck.supported_degree(),
+//                ck.max_degree,
+//                enforced_degree_bounds,
+//                &p,
+//            )?;
+//
+//            let commit_time = start_timer!(|| format!(
+//                "Polynomial {} of degree {}, degree bound {:?}, and hiding bound {:?}",
+//                label,
+//                polynomial.degree(),
+//                degree_bound,
+//                hiding_bound,
+//            ));
+//
+//            let (comm, rand) =
+//                kzg10::KZG10::commit(&ck.powers(), polynomial, hiding_bound, Some(rng))?;
+//            let (shifted_comm, shifted_rand) = if let Some(degree_bound) = degree_bound {
+//                let shifted_powers = ck
+//                    .shifted_powers(degree_bound)
+//                    .ok_or(Error::UnsupportedDegreeBound(degree_bound))?;
+//                let (shifted_comm, shifted_rand) =
+//                    kzg10::KZG10::commit(&shifted_powers, &polynomial, hiding_bound, Some(rng))?;
+//                (Some(shifted_comm), Some(shifted_rand))
+//            } else {
+//                (None, None)
+//            };
+//
+//            let comm = Commitment { comm, shifted_comm };
+//            let rand = Randomness { rand, shifted_rand };
+//            commitments.push(LabeledCommitment::new(
+//                label.to_string(),
+//                comm,
+//                degree_bound,
+//            ));
+//            randomness.push(rand);
+//            end_timer!(commit_time);
+//        }
         end_timer!(commit_time);
         Ok((commitments, randomness))
     }

@@ -39,6 +39,9 @@ digest = "0.8"
 rayon = { version = "1", optional = true }
 derivative = { version = "2", features = [ "use_core" ] }
 
+crypto-primitives = { path = "../delegare/crypto-primitives" }
+bincode = "1.3.1"
+
 [dev-dependencies]
 rand = { version = "0.7", default-features = false }
 ark-ed-on-bls12-381 = { git = "https://github.com/arkworks-rs/curves", default-features = false }
