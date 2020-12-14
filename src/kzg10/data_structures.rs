@@ -351,14 +351,20 @@ impl<F: PrimeField, P: UVPolynomial<F>> Zero for Randomness<F, P> {
 
 impl<F: PrimeField, P: UVPolynomial<F> + Share> Share for Randomness<F, P> {
     fn share<R: RngCore>(&self, num: usize, rng: &mut R) -> Vec<Self> {
-        self.blinding_polynomial.share(num, rng)
+        self.blinding_polynomial
+            .share(num, rng)
             .into_iter()
-            .map(|p| Self { blinding_polynomial: p, _field: PhantomData })
+            .map(|p| Self {
+                blinding_polynomial: p,
+                _field: PhantomData,
+            })
             .collect()
     }
 }
 
-impl<F: PrimeField, P: UVPolynomial<F> + CanonicalSerialize> CanonicalSerialize for Randomness<F, P> {
+impl<F: PrimeField, P: UVPolynomial<F> + CanonicalSerialize> CanonicalSerialize
+    for Randomness<F, P>
+{
     #[inline]
     fn serialize<W: Write>(&self, writer: W) -> Result<(), SerializationError> {
         self.blinding_polynomial.serialize(writer)?;
@@ -388,23 +394,34 @@ impl<F: PrimeField, P: UVPolynomial<F> + CanonicalSerialize> CanonicalSerialize 
     }
 }
 
-impl<F: PrimeField, P: UVPolynomial<F> + CanonicalDeserialize> CanonicalDeserialize for Randomness<F, P> {
+impl<F: PrimeField, P: UVPolynomial<F> + CanonicalDeserialize> CanonicalDeserialize
+    for Randomness<F, P>
+{
     #[inline]
     fn deserialize<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
         let blinding_polynomial = P::deserialize(&mut reader)?;
-        Ok(Self { blinding_polynomial, _field: PhantomData })
+        Ok(Self {
+            blinding_polynomial,
+            _field: PhantomData,
+        })
     }
 
     #[inline]
     fn deserialize_uncompressed<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
         let blinding_polynomial = P::deserialize_uncompressed(&mut reader)?;
-        Ok(Self { blinding_polynomial, _field: PhantomData })
+        Ok(Self {
+            blinding_polynomial,
+            _field: PhantomData,
+        })
     }
 
     #[inline]
     fn deserialize_unchecked<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
         let blinding_polynomial = P::deserialize_unchecked(&mut reader)?;
-        Ok(Self { blinding_polynomial, _field: PhantomData })
+        Ok(Self {
+            blinding_polynomial,
+            _field: PhantomData,
+        })
     }
 }
 
@@ -466,7 +483,10 @@ impl<E: PairingEngine> Add for Proof<E> {
 impl<E: PairingEngine> Zero for Proof<E> {
     #[inline]
     fn zero() -> Self {
-        Self { w: E::G1Affine::zero(), random_v: None }
+        Self {
+            w: E::G1Affine::zero(),
+            random_v: None,
+        }
     }
 
     #[inline]
@@ -487,7 +507,10 @@ impl<E: PairingEngine> Share for Proof<E> {
             w_shares
                 .into_iter()
                 .zip(random_v.share(num, rng))
-                .map(|(w, v)| Self { w, random_v: Some(v)})
+                .map(|(w, v)| Self {
+                    w,
+                    random_v: Some(v),
+                })
                 .collect()
         } else {
             w_shares
