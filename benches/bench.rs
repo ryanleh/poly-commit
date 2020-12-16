@@ -126,7 +126,7 @@ fn bench_kzg10_bls12_381(c: &mut Criterion) {
 
 criterion_group! {
     name = benches;
-    config = Criterion::default().sample_size(10);
+    config = Criterion::default().sample_size(15);
     targets = bench_kzg10_bls12_381
 }
 criterion_main!(benches);
