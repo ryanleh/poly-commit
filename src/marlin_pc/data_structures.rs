@@ -324,7 +324,7 @@ impl<'a, E: PairingEngine> Add<&'a Self> for Commitment<E> {
             (Some(mut s), Some(o)) => {
                 s += o;
                 Some(s)
-            },
+            }
             (Some(s), None) => Some(s),
             (None, Some(o)) => Some(o.clone()),
             _ => None,

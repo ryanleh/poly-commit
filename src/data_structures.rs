@@ -298,7 +298,7 @@ impl<'a, C: PCCommitment + Add<&'a C, Output = C>> Add<&'a Self> for LabeledComm
 
     #[inline]
     fn add(mut self, other: &'a Self) -> Self {
-        self.commitment = self.commitment +  &other.commitment;
+        self.commitment = self.commitment + &other.commitment;
         self
     }
 }
