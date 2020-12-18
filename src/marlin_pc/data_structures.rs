@@ -16,7 +16,7 @@ pub type UniversalParams<E> = kzg10::UniversalParams<E>;
 
 /// `CommitterKey` is used to commit to and create evaluation proofs for a given
 /// polynomial.
-#[derive(Derivative, CanonicalSerialize, CanonicalDeserialize)]
+#[derive(Derivative)]
 #[derivative(
     Default(bound = ""),
     Hash(bound = ""),
@@ -43,46 +43,46 @@ pub struct CommitterKey<E: PairingEngine> {
     pub max_degree: usize,
 }
 
-//impl<E: PairingEngine> CanonicalSerialize for CommitterKey<E> {
-//    #[inline]
-//    fn serialize<W: Write>(&self, mut writer: W) -> Result<(), SerializationError> {
-//        self.powers.serialize_uncompressed(&mut writer)?;
-//        self.shifted_powers
-//            .serialize_uncompressed(&mut writer)
-//            .unwrap();
-//        self.powers_of_gamma_g.serialize_uncompressed(&mut writer)?;
-//        self.enforced_degree_bounds.serialize(&mut writer)?;
-//        self.max_degree.serialize(&mut writer)?;
-//        Ok(())
-//    }
-//
-//    #[inline]
-//    fn serialized_size(&self) -> usize {
-//        self.powers.uncompressed_size()
-//            + self.shifted_powers.uncompressed_size()
-//            + self.powers_of_gamma_g.uncompressed_size()
-//            + self.enforced_degree_bounds.serialized_size()
-//            + self.max_degree.serialized_size()
-//    }
-//}
-//
-//impl<E: PairingEngine> CanonicalDeserialize for CommitterKey<E> {
-//    #[inline]
-//    fn deserialize<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
-//        let powers = Vec::<E::G1Affine>::deserialize_unchecked(&mut reader)?;
-//        let shifted_powers = Option::<Vec<E::G1Affine>>::deserialize_unchecked(&mut reader)?;
-//        let powers_of_gamma_g = Vec::<E::G1Affine>::deserialize_unchecked(&mut reader)?;
-//        let enforced_degree_bounds = Option::<Vec<usize>>::deserialize(&mut reader)?;
-//        let max_degree = usize::deserialize(&mut reader)?;
-//        Ok(Self {
-//            powers,
-//            shifted_powers,
-//            powers_of_gamma_g,
-//            enforced_degree_bounds,
-//            max_degree,
-//        })
-//    }
-//}
+impl<E: PairingEngine> CanonicalSerialize for CommitterKey<E> {
+    #[inline]
+    fn serialize<W: Write>(&self, mut writer: W) -> Result<(), SerializationError> {
+        self.powers.serialize_uncompressed(&mut writer)?;
+        self.shifted_powers
+            .serialize_uncompressed(&mut writer)
+            .unwrap();
+        self.powers_of_gamma_g.serialize_uncompressed(&mut writer)?;
+        self.enforced_degree_bounds.serialize(&mut writer)?;
+        self.max_degree.serialize(&mut writer)?;
+        Ok(())
+    }
+
+    #[inline]
+    fn serialized_size(&self) -> usize {
+        self.powers.uncompressed_size()
+            + self.shifted_powers.uncompressed_size()
+            + self.powers_of_gamma_g.uncompressed_size()
+            + self.enforced_degree_bounds.serialized_size()
+            + self.max_degree.serialized_size()
+    }
+}
+
+impl<E: PairingEngine> CanonicalDeserialize for CommitterKey<E> {
+    #[inline]
+    fn deserialize<R: Read>(mut reader: R) -> Result<Self, SerializationError> {
+        let powers = Vec::<E::G1Affine>::deserialize_unchecked(&mut reader)?;
+        let shifted_powers = Option::<Vec<E::G1Affine>>::deserialize_unchecked(&mut reader)?;
+        let powers_of_gamma_g = Vec::<E::G1Affine>::deserialize_unchecked(&mut reader)?;
+        let enforced_degree_bounds = Option::<Vec<usize>>::deserialize(&mut reader)?;
+        let max_degree = usize::deserialize(&mut reader)?;
+        Ok(Self {
+            powers,
+            shifted_powers,
+            powers_of_gamma_g,
+            enforced_degree_bounds,
+            max_degree,
+        })
+    }
+}
 
 impl<E: PairingEngine> CommitterKey<E> {
     /// Obtain powers for the underlying KZG10 construction
