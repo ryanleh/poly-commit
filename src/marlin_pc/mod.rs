@@ -355,205 +355,6 @@ where
 //        Ok((commitments, randomness))
 //    }
 
-//    /// Outputs a commitment to `polynomial`.
-//    fn commit<'a>(
-//        ck: &Self::CommitterKey,
-//        polynomials: impl IntoIterator<Item = &'a LabeledPolynomial<E::Fr, P>>,
-//        rng: Option<&mut dyn RngCore>,
-//    ) -> Result<
-//        (
-//            Vec<LabeledCommitment<Self::Commitment>>,
-//            Vec<Self::Randomness>,
-//        ),
-//        Self::Error,
-//    >
-//    where
-//        P: 'a,
-//    {
-//        let rng = &mut crate::optional_rng::OptionalRng(rng);
-//        let commit_time = start_timer!(|| "Committing to polynomials");
-//
-//        let poly_ref: Vec<(&String, Option<usize>, Option<usize>, &P)> = polynomials
-//            .into_iter()
-//            .map(|p| {
-//                (
-//                    p.label(),
-//                    p.degree_bound(),
-//                    p.hiding_bound(),
-//                    p.polynomial(),
-//                )
-//            })
-//            .collect();
-//
-//        use rayon::prelude::*;
-//        let comm_rand = poly_ref
-//            .into_par_iter()
-//            .map(|(label, degree_bound, hiding_bound, polynomial)| {
-//                let rng = &mut ark_ff::test_rng(); // TODO
-//
-//                let enforced_degree_bounds: Option<&[usize]> = ck
-//                    .enforced_degree_bounds
-//                    .as_ref()
-//                    .map(|bounds| bounds.as_slice());
-//
-//                let commit_time = start_timer!(|| format!(
-//                    "Polynomial {} of degree {}, degree bound {:?}, and hiding bound {:?}",
-//                    label,
-//                    polynomial.degree(),
-//                    degree_bound,
-//                    hiding_bound,
-//                ));
-//
-//                let (comm, rand) =
-//                    kzg10::KZG10::commit(&ck.powers(), polynomial, hiding_bound, Some(rng))?;
-//                let (shifted_comm, shifted_rand) = if let Some(degree_bound) = degree_bound {
-//                    let shifted_powers = ck
-//                        .shifted_powers(degree_bound)
-//                        .ok_or(Error::UnsupportedDegreeBound(degree_bound))?;
-//                    let (shifted_comm, shifted_rand) = kzg10::KZG10::commit(
-//                        &shifted_powers,
-//                        &polynomial,
-//                        hiding_bound,
-//                        Some(rng),
-//                    )?;
-//                    (Some(shifted_comm), Some(shifted_rand))
-//                } else {
-//                    (None, None)
-//                };
-//
-//                let comm = Commitment { comm, shifted_comm };
-//                let rand = Randomness { rand, shifted_rand };
-//
-//                let labeled_commitment =
-//                    LabeledCommitment::new(label.to_string(), comm, degree_bound);
-//                end_timer!(commit_time);
-//                Ok((labeled_commitment, rand))
-//            })
-//            .collect::<Result<Vec<_>, _>>()?;
-//
-//        let (commitments, randomness) = comm_rand.into_iter().unzip();
-//
-//        end_timer!(commit_time);
-//        Ok((commitments, randomness))
-//    }
-
-//    /// Outputs a commitment to `polynomial`.
-//    fn commit<'a>(
-//        ck: &Self::CommitterKey,
-//        polynomials: impl IntoIterator<Item = &'a LabeledPolynomial<E::Fr, P>>,
-//        rng: Option<&mut dyn RngCore>,
-//    ) -> Result<
-//        (
-//            Vec<LabeledCommitment<Self::Commitment>>,
-//            Vec<Self::Randomness>,
-//        ),
-//        Self::Error,
-//    >
-//    where
-//        P: 'a,
-//    {
-//        let commit_time = start_timer!(|| "Committing to polynomials");
-//
-//        // TODO: Cleaner
-//        let mut poly_ref: Vec<(&String, Option<usize>, Option<usize>, &P)> = polynomials
-//            .into_iter()
-//            .map(|p| {
-//                (
-//                    p.label(),
-//                    p.degree_bound(),
-//                    p.hiding_bound(),
-//                    p.polynomial(),
-//                )
-//            })
-//            .collect();
-//
-//        let commit_helper = |(label, degree_bound, hiding_bound, polynomial): (
-//            &String,
-//            Option<usize>,
-//            Option<usize>,
-//            &P,
-//        )|
-//         -> Result<
-//            (LabeledCommitment<Self::Commitment>, Self::Randomness),
-//            Self::Error,
-//        > {
-//            let rng = &mut ark_ff::test_rng(); // TODO
-//
-//            let enforced_degree_bounds: Option<&[usize]> = ck
-//                .enforced_degree_bounds
-//                .as_ref()
-//                .map(|bounds| bounds.as_slice());
-//
-//            let commit_time = start_timer!(|| format!(
-//                "Polynomial {} of degree {}, degree bound {:?}, and hiding bound {:?}",
-//                label,
-//                polynomial.degree(),
-//                degree_bound,
-//                hiding_bound,
-//            ));
-//
-//            let (comm, rand) =
-//                kzg10::KZG10::commit(&ck.powers(), polynomial, hiding_bound, Some(rng))?;
-//            let (shifted_comm, shifted_rand) = if let Some(degree_bound) = degree_bound {
-//                let shifted_powers = ck
-//                    .shifted_powers(degree_bound)
-//                    .ok_or(Error::UnsupportedDegreeBound(degree_bound))?;
-//                let (shifted_comm, shifted_rand) =
-//                    kzg10::KZG10::commit(&shifted_powers, &polynomial, hiding_bound, Some(rng))?;
-//                (Some(shifted_comm), Some(shifted_rand))
-//            } else {
-//                (None, None)
-//            };
-//
-//            let comm = Commitment { comm, shifted_comm };
-//            let rand = Randomness { rand, shifted_rand };
-//
-//            let labeled_commitment = LabeledCommitment::new(label.to_string(), comm, degree_bound);
-//            end_timer!(commit_time);
-//            Ok((labeled_commitment, rand))
-//        };
-//
-//        use ark_std::sync::{Arc, Mutex};
-//        use rayon::ThreadPoolBuilder;
-//
-//        let total_threads = rayon::current_num_threads();
-//        let num_polys = poly_ref.len();
-//
-//        // TODO: Assumes num_threads > num_poly
-//        if total_threads < num_polys {
-//            panic!();
-//        }
-//
-//        let num_threads_per: Vec<usize> = (0..num_polys)
-//            .map(|i| {
-//                if i == poly_ref.len() - 1 {
-//                    total_threads / num_polys + total_threads % num_polys
-//                } else {
-//                    total_threads / num_polys
-//                }
-//            })
-//            .collect();
-//        
-//        let mut result = vec![(LabeledCommitment::zero(), Randomness::zero()); num_polys];
-//
-//        rayon::scope(|s| {
-//            for ((r, p), num) in result
-//                .iter_mut()
-//                .zip(poly_ref.into_iter())
-//                .zip(num_threads_per)
-//            {
-//                s.spawn(move |_| {
-//                    let pool = ThreadPoolBuilder::new().num_threads(num).build().unwrap();
-//                    *r = pool.install(|| commit_helper(p)).unwrap();
-//                });
-//            }
-//        });
-//
-//        end_timer!(commit_time);
-//        let (commitments, randomness) = result.into_iter().unzip();
-//        Ok((commitments, randomness))
-//    }
-
     /// Outputs a commitment to `polynomial`.
     fn commit<'a>(
         ck: &Self::CommitterKey,
@@ -632,9 +433,10 @@ where
 
         let total_threads = rayon::current_num_threads();
         let num_polys = polynomials.len();
-        let pool_size = std::cmp::max(total_threads / num_polys, 12);
+        let pool_size = std::cmp::max(total_threads / num_polys, 20);
         let free_threads = Arc::new((Mutex::new(total_threads), Condvar::new()));
-        
+        assert!(total_threads >= pool_size);
+
         let mut result = vec![(LabeledCommitment::zero(), Randomness::zero()); num_polys];
 
         rayon::scope(|s| {
@@ -666,7 +468,7 @@ where
                     cvar.notify_one();
                 });
             }
-            let (threads, cvar) = &*free_threads;
+            let (_, cvar) = &*free_threads;
             cvar.notify_one();
         });
 
