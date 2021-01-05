@@ -545,28 +545,48 @@ where
                 }
             }
         }
-        let proof_time = start_timer!(|| "Creating proof for unshifted polynomials");
-        let proof = kzg10::KZG10::open(&ck.powers(), &p, *point, &r)?;
-        let mut w = proof.w.into_projective();
-        let mut random_v = proof.random_v;
-        end_timer!(proof_time);
 
-        if enforce_degree_bound {
-            let proof_time = start_timer!(|| "Creating proof for shifted polynomials");
-            let shifted_proof = kzg10::KZG10::open_with_witness_polynomial(
-                &ck.shifted_powers(None).unwrap(),
-                *point,
-                &shifted_r,
-                &shifted_w,
-                Some(&shifted_r_witness),
-            )?;
-            end_timer!(proof_time);
+        let mut w = E::G1Projective::default();
+        let mut random_v = None;
+        rayon::scope(|s| {
+            let proof = || {
+                let proof_time = start_timer!(|| "Creating proof for unshifted polynomials");
+                let proof = kzg10::KZG10::open(&ck.powers(), &p, *point, &r).unwrap();
+                end_timer!(proof_time);
+                proof
+            };
 
-            w += &shifted_proof.w.into_projective();
-            if let Some(shifted_random_v) = shifted_proof.random_v {
-                random_v = random_v.map(|v| v + &shifted_random_v);
-            }
-        }
+            let shifted_proof = || {
+                if enforce_degree_bound {
+                    let proof_time = start_timer!(|| "Creating proof for shifted polynomials");
+                    let shifted_proof = kzg10::KZG10::open_with_witness_polynomial(
+                        &ck.shifted_powers(None).unwrap(),
+                        *point,
+                        &shifted_r,
+                        &shifted_w,
+                        Some(&shifted_r_witness),
+                    ).unwrap();
+                    end_timer!(proof_time);
+                    Some(shifted_proof)
+                } else {
+                    None
+                }
+            };
+
+            let (proof, shifted_proof) = rayon::join(proof, shifted_proof);
+            w = proof.w.into_projective();
+            random_v = proof.random_v;
+
+            match shifted_proof {
+                Some(proof) => {
+                    w += &proof.w.into_projective();
+                    if let Some(shifted_random_v) = proof.random_v {
+                        random_v = random_v.map(|v| v + &shifted_random_v);
+                    }
+                },
+                None => {},
+            };
+        });
 
         Ok(kzg10::Proof {
             w: w.into_affine(),
