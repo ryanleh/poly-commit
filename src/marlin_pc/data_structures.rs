@@ -46,11 +46,11 @@ pub struct CommitterKey<E: PairingEngine> {
 impl<E: PairingEngine> CanonicalSerialize for CommitterKey<E> {
     #[inline]
     fn serialize<W: Write>(&self, mut writer: W) -> Result<(), SerializationError> {
-        self.powers.serialize_uncompressed(&mut writer)?;
+        self.powers.serialize_unchecked(&mut writer)?;
         self.shifted_powers
-            .serialize_uncompressed(&mut writer)
+            .serialize_unchecked(&mut writer)
             .unwrap();
-        self.powers_of_gamma_g.serialize_uncompressed(&mut writer)?;
+        self.powers_of_gamma_g.serialize_unchecked(&mut writer)?;
         self.enforced_degree_bounds.serialize(&mut writer)?;
         self.max_degree.serialize(&mut writer)?;
         Ok(())
