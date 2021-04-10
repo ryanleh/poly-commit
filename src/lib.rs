@@ -13,11 +13,11 @@
 #[macro_use]
 extern crate derivative;
 #[macro_use]
-extern crate bench_utils;
+extern crate ark_std;
 
 use ark_ff::Field;
 pub use ark_poly::{Polynomial, UVPolynomial};
-use rand_core::RngCore;
+use ark_std::rand::RngCore;
 
 use ark_std::{
     collections::{BTreeMap, BTreeSet},
@@ -44,6 +44,13 @@ pub mod error;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 pub use error::*;
 
+/// Univariate and multivariate polynomial commitment schemes
+/// which (optionally) enable hiding commitments by following
+/// the approach outlined in [[CHMMVW20, "Marlin"]][marlin].
+///
+/// [marlin]: https://eprint.iacr.org/2019/1047
+pub mod marlin;
+
 /// A random number generator that bypasses some limitations of the Rust borrow
 /// checker.
 pub mod optional_rng;
@@ -69,7 +76,7 @@ pub mod kzg10;
 ///
 /// [kzg]: http://cacr.uwaterloo.ca/techreports/2010/cacr2010-10.pdf
 /// [marlin]: https://eprint.iacr.org/2019/1047
-pub mod marlin_pc;
+pub use marlin::marlin_pc;
 
 /// Polynomial commitment scheme based on the construction in [[KZG10]][kzg],
 /// modified to obtain batching and to enforce strict
@@ -89,6 +96,22 @@ pub mod sonic_pc;
 ///
 /// [pcdas]: https://eprint.iacr.org/2020/499
 pub mod ipa_pc;
+
+/// A multilinear polynomial commitment scheme that converts n-variate multilinear polynomial into
+/// n quotient UV polynomial. This scheme is based on hardness of the discrete logarithm
+/// in prime-order groups. Construction is detailed in [[XZZPD19]][xzzpd19] and [[ZGKPP18]][zgkpp18]
+///
+/// [xzzpd19]: https://eprint.iacr.org/2019/317
+/// [zgkpp]: https://ieeexplore.ieee.org/document/8418645
+pub mod multilinear_pc;
+
+/// Multivariate polynomial commitment based on the construction in
+/// [[PST13]][pst] with batching and (optional) hiding property inspired
+/// by the univariate scheme in [[CHMMVW20, "Marlin"]][marlin]
+///
+/// [pst]: https://eprint.iacr.org/2011/587.pdf
+/// [marlin]: https://eprint.iacr.org/2019/104
+pub use marlin::marlin_pst13_pc;
 
 /// `QuerySet` is the set of queries that are to be made to a set of labeled polynomials/equations
 /// `p` that have previously been committed to. Each element of a `QuerySet` is a pair of
@@ -662,8 +685,12 @@ pub mod tests {
     use crate::*;
     use ark_ff::Field;
     use ark_poly::Polynomial;
+    use ark_std::rand::{
+        distributions::{Distribution, Uniform},
+        rngs::StdRng,
+        Rng,
+    };
     use ark_std::test_rng;
-    use rand::{distributions::Distribution, Rng};
 
     struct TestInfo<F: Field, P: Polynomial<F>> {
         num_iters: usize,
@@ -674,13 +701,13 @@ pub mod tests {
         enforce_degree_bounds: bool,
         max_num_queries: usize,
         num_equations: Option<usize>,
-        rand_poly: fn(usize, Option<usize>, &mut rand::prelude::StdRng) -> P,
-        rand_point: fn(Option<usize>, &mut rand::prelude::StdRng) -> P::Point,
+        rand_poly: fn(usize, Option<usize>, &mut StdRng) -> P,
+        rand_point: fn(Option<usize>, &mut StdRng) -> P::Point,
     }
 
     pub fn bad_degree_bound_test<F, P, PC>(
-        rand_poly: fn(usize, Option<usize>, &mut rand::prelude::StdRng) -> P,
-        rand_point: fn(Option<usize>, &mut rand::prelude::StdRng) -> P::Point,
+        rand_poly: fn(usize, Option<usize>, &mut StdRng) -> P,
+        rand_point: fn(Option<usize>, &mut StdRng) -> P::Point,
     ) -> Result<(), PC::Error>
     where
         F: Field,
@@ -691,7 +718,7 @@ pub mod tests {
         let max_degree = 100;
         let pp = PC::setup(max_degree, None, rng)?;
         for _ in 0..10 {
-            let supported_degree = rand::distributions::Uniform::from(1..=max_degree).sample(rng);
+            let supported_degree = Uniform::from(1..=max_degree).sample(rng);
             assert!(
                 max_degree >= supported_degree,
                 "max_degree < supported_degree"
@@ -789,14 +816,14 @@ pub mod tests {
         let rng = &mut test_rng();
         // If testing multivariate polynomials, make the max degree lower
         let max_degree = match num_vars {
-            Some(_) => max_degree.unwrap_or(rand::distributions::Uniform::from(2..=10).sample(rng)),
-            None => max_degree.unwrap_or(rand::distributions::Uniform::from(2..=64).sample(rng)),
+            Some(_) => max_degree.unwrap_or(Uniform::from(2..=10).sample(rng)),
+            None => max_degree.unwrap_or(Uniform::from(2..=64).sample(rng)),
         };
         let pp = PC::setup(max_degree, num_vars, rng)?;
 
         for _ in 0..num_iters {
-            let supported_degree = supported_degree
-                .unwrap_or(rand::distributions::Uniform::from(1..=max_degree).sample(rng));
+            let supported_degree =
+                supported_degree.unwrap_or(Uniform::from(1..=max_degree).sample(rng));
             assert!(
                 max_degree >= supported_degree,
                 "max_degree < supported_degree"
@@ -812,14 +839,13 @@ pub mod tests {
             println!("Sampled supported degree");
 
             // Generate polynomials
-            let num_points_in_query_set =
-                rand::distributions::Uniform::from(1..=max_num_queries).sample(rng);
+            let num_points_in_query_set = Uniform::from(1..=max_num_queries).sample(rng);
             for i in 0..num_polynomials {
                 let label = format!("Test{}", i);
                 labels.push(label.clone());
-                let degree = rand::distributions::Uniform::from(1..=supported_degree).sample(rng);
+                let degree = Uniform::from(1..=supported_degree).sample(rng);
                 let degree_bound = if let Some(degree_bounds) = &mut degree_bounds {
-                    let range = rand::distributions::Uniform::from(degree..=supported_degree);
+                    let range = Uniform::from(degree..=supported_degree);
                     let degree_bound = range.sample(rng);
                     degree_bounds.push(degree_bound);
                     Some(degree_bound)
@@ -927,14 +953,14 @@ pub mod tests {
         let rng = &mut test_rng();
         // If testing multivariate polynomials, make the max degree lower
         let max_degree = match num_vars {
-            Some(_) => max_degree.unwrap_or(rand::distributions::Uniform::from(2..=10).sample(rng)),
-            None => max_degree.unwrap_or(rand::distributions::Uniform::from(2..=64).sample(rng)),
+            Some(_) => max_degree.unwrap_or(Uniform::from(2..=10).sample(rng)),
+            None => max_degree.unwrap_or(Uniform::from(2..=64).sample(rng)),
         };
         let pp = PC::setup(max_degree, num_vars, rng)?;
 
         for _ in 0..num_iters {
-            let supported_degree = supported_degree
-                .unwrap_or(rand::distributions::Uniform::from(1..=max_degree).sample(rng));
+            let supported_degree =
+                supported_degree.unwrap_or(Uniform::from(1..=max_degree).sample(rng));
             assert!(
                 max_degree >= supported_degree,
                 "max_degree < supported_degree"
@@ -950,15 +976,14 @@ pub mod tests {
             println!("Sampled supported degree");
 
             // Generate polynomials
-            let num_points_in_query_set =
-                rand::distributions::Uniform::from(1..=max_num_queries).sample(rng);
+            let num_points_in_query_set = Uniform::from(1..=max_num_queries).sample(rng);
             for i in 0..num_polynomials {
                 let label = format!("Test{}", i);
                 labels.push(label.clone());
-                let degree = rand::distributions::Uniform::from(1..=supported_degree).sample(rng);
+                let degree = Uniform::from(1..=supported_degree).sample(rng);
                 let degree_bound = if let Some(degree_bounds) = &mut degree_bounds {
                     if rng.gen() {
-                        let range = rand::distributions::Uniform::from(degree..=supported_degree);
+                        let range = Uniform::from(degree..=supported_degree);
                         let degree_bound = range.sample(rng);
                         degree_bounds.push(degree_bound);
                         Some(degree_bound)
@@ -1085,8 +1110,8 @@ pub mod tests {
 
     pub fn single_poly_test<F, P, PC>(
         num_vars: Option<usize>,
-        rand_poly: fn(usize, Option<usize>, &mut rand::prelude::StdRng) -> P,
-        rand_point: fn(Option<usize>, &mut rand::prelude::StdRng) -> P::Point,
+        rand_poly: fn(usize, Option<usize>, &mut StdRng) -> P,
+        rand_point: fn(Option<usize>, &mut StdRng) -> P::Point,
     ) -> Result<(), PC::Error>
     where
         F: Field,
@@ -1109,8 +1134,8 @@ pub mod tests {
     }
 
     pub fn linear_poly_degree_bound_test<F, P, PC>(
-        rand_poly: fn(usize, Option<usize>, &mut rand::prelude::StdRng) -> P,
-        rand_point: fn(Option<usize>, &mut rand::prelude::StdRng) -> P::Point,
+        rand_poly: fn(usize, Option<usize>, &mut StdRng) -> P,
+        rand_point: fn(Option<usize>, &mut StdRng) -> P::Point,
     ) -> Result<(), PC::Error>
     where
         F: Field,
@@ -1133,8 +1158,8 @@ pub mod tests {
     }
 
     pub fn single_poly_degree_bound_test<F, P, PC>(
-        rand_poly: fn(usize, Option<usize>, &mut rand::prelude::StdRng) -> P,
-        rand_point: fn(Option<usize>, &mut rand::prelude::StdRng) -> P::Point,
+        rand_poly: fn(usize, Option<usize>, &mut StdRng) -> P,
+        rand_point: fn(Option<usize>, &mut StdRng) -> P::Point,
     ) -> Result<(), PC::Error>
     where
         F: Field,
@@ -1157,8 +1182,8 @@ pub mod tests {
     }
 
     pub fn quadratic_poly_degree_bound_multiple_queries_test<F, P, PC>(
-        rand_poly: fn(usize, Option<usize>, &mut rand::prelude::StdRng) -> P,
-        rand_point: fn(Option<usize>, &mut rand::prelude::StdRng) -> P::Point,
+        rand_poly: fn(usize, Option<usize>, &mut StdRng) -> P,
+        rand_point: fn(Option<usize>, &mut StdRng) -> P::Point,
     ) -> Result<(), PC::Error>
     where
         F: Field,
@@ -1181,8 +1206,8 @@ pub mod tests {
     }
 
     pub fn single_poly_degree_bound_multiple_queries_test<F, P, PC>(
-        rand_poly: fn(usize, Option<usize>, &mut rand::prelude::StdRng) -> P,
-        rand_point: fn(Option<usize>, &mut rand::prelude::StdRng) -> P::Point,
+        rand_poly: fn(usize, Option<usize>, &mut StdRng) -> P,
+        rand_point: fn(Option<usize>, &mut StdRng) -> P::Point,
     ) -> Result<(), PC::Error>
     where
         F: Field,
@@ -1205,8 +1230,8 @@ pub mod tests {
     }
 
     pub fn two_polys_degree_bound_single_query_test<F, P, PC>(
-        rand_poly: fn(usize, Option<usize>, &mut rand::prelude::StdRng) -> P,
-        rand_point: fn(Option<usize>, &mut rand::prelude::StdRng) -> P::Point,
+        rand_poly: fn(usize, Option<usize>, &mut StdRng) -> P,
+        rand_point: fn(Option<usize>, &mut StdRng) -> P::Point,
     ) -> Result<(), PC::Error>
     where
         F: Field,
@@ -1230,8 +1255,8 @@ pub mod tests {
 
     pub fn full_end_to_end_test<F, P, PC>(
         num_vars: Option<usize>,
-        rand_poly: fn(usize, Option<usize>, &mut rand::prelude::StdRng) -> P,
-        rand_point: fn(Option<usize>, &mut rand::prelude::StdRng) -> P::Point,
+        rand_poly: fn(usize, Option<usize>, &mut StdRng) -> P,
+        rand_point: fn(Option<usize>, &mut StdRng) -> P::Point,
     ) -> Result<(), PC::Error>
     where
         F: Field,
@@ -1255,8 +1280,8 @@ pub mod tests {
 
     pub fn full_end_to_end_equation_test<F, P, PC>(
         num_vars: Option<usize>,
-        rand_poly: fn(usize, Option<usize>, &mut rand::prelude::StdRng) -> P,
-        rand_point: fn(Option<usize>, &mut rand::prelude::StdRng) -> P::Point,
+        rand_poly: fn(usize, Option<usize>, &mut StdRng) -> P,
+        rand_point: fn(Option<usize>, &mut StdRng) -> P::Point,
     ) -> Result<(), PC::Error>
     where
         F: Field,
@@ -1280,8 +1305,8 @@ pub mod tests {
 
     pub fn single_equation_test<F, P, PC>(
         num_vars: Option<usize>,
-        rand_poly: fn(usize, Option<usize>, &mut rand::prelude::StdRng) -> P,
-        rand_point: fn(Option<usize>, &mut rand::prelude::StdRng) -> P::Point,
+        rand_poly: fn(usize, Option<usize>, &mut StdRng) -> P,
+        rand_point: fn(Option<usize>, &mut StdRng) -> P::Point,
     ) -> Result<(), PC::Error>
     where
         F: Field,
@@ -1305,8 +1330,8 @@ pub mod tests {
 
     pub fn two_equation_test<F, P, PC>(
         num_vars: Option<usize>,
-        rand_poly: fn(usize, Option<usize>, &mut rand::prelude::StdRng) -> P,
-        rand_point: fn(Option<usize>, &mut rand::prelude::StdRng) -> P::Point,
+        rand_poly: fn(usize, Option<usize>, &mut StdRng) -> P,
+        rand_point: fn(Option<usize>, &mut StdRng) -> P::Point,
     ) -> Result<(), PC::Error>
     where
         F: Field,
@@ -1329,8 +1354,8 @@ pub mod tests {
     }
 
     pub fn two_equation_degree_bound_test<F, P, PC>(
-        rand_poly: fn(usize, Option<usize>, &mut rand::prelude::StdRng) -> P,
-        rand_point: fn(Option<usize>, &mut rand::prelude::StdRng) -> P::Point,
+        rand_poly: fn(usize, Option<usize>, &mut StdRng) -> P,
+        rand_point: fn(Option<usize>, &mut StdRng) -> P::Point,
     ) -> Result<(), PC::Error>
     where
         F: Field,

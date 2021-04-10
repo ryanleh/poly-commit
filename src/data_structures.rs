@@ -1,6 +1,7 @@
 use crate::{Polynomial, PolynomialCommitment, Rc, String, Vec};
-use ark_ff::{Field, Zero};
-use ark_serialize::*;
+use ark_ff::{Field, ToConstraintField, Zero};
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, SerializationError};
+use ark_std::rand::RngCore;
 use ark_std::{
     borrow::Borrow,
     io::{Read, Write},
@@ -8,8 +9,8 @@ use ark_std::{
     ops::{Add, AddAssign, MulAssign, SubAssign},
     string::ToString,
 };
+
 use crypto_primitives::Share;
-use rand_core::RngCore;
 
 /// Labels a `LabeledPolynomial` or a `LabeledCommitment`.
 pub type PolynomialLabel = String;
@@ -232,6 +233,14 @@ pub struct LabeledCommitment<C: PCCommitment> {
     label: PolynomialLabel,
     commitment: C,
     degree_bound: Option<usize>,
+}
+
+impl<F: Field, C: PCCommitment + ToConstraintField<F>> ToConstraintField<F>
+    for LabeledCommitment<C>
+{
+    fn to_field_elements(&self) -> Option<Vec<F>> {
+        self.commitment.to_field_elements()
+    }
 }
 
 impl<C: PCCommitment> LabeledCommitment<C> {
